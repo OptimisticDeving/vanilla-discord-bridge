@@ -29,7 +29,7 @@ use wrapper::launch_wrapper;
 
 #[inline]
 const fn default_bind_address() -> Cow<'static, str> {
-    Cow::Borrowed("[::]:8080")
+    Cow::Borrowed("127.0.0.1:8080")
 }
 
 #[derive(Debug, Deserialize)]
