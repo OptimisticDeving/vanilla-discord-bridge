@@ -19,7 +19,7 @@ use tracing::{error, info};
 use tracing_subscriber::fmt;
 use twilight_http::Client;
 use twilight_model::{
-    channel::message::AllowedMentions,
+    channel::message::{AllowedMentions, MentionType},
     id::{
         Id,
         marker::{ChannelMarker, WebhookMarker},
@@ -47,6 +47,12 @@ struct Config {
     webhook_token: String,
     #[serde(default)]
     discord: Option<DiscordConfig>,
+    #[serde(default)]
+    allow_everyone_mention: bool,
+    #[serde(default)]
+    allow_user_mention: bool,
+    #[serde(default)]
+    allow_role_mention: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -64,11 +70,24 @@ async fn main() -> Result<()> {
     fmt().init();
 
     let config: Config = serde_env::from_env()?;
+
+    let mut parse_mentions = Vec::new();
+
+    if config.allow_user_mention {
+        parse_mentions.push(MentionType::Users);
+    }
+
+    if config.allow_role_mention {
+        parse_mentions.push(MentionType::Roles);
+    }
+
+    if config.allow_everyone_mention {
+        parse_mentions.push(MentionType::Everyone);
+    }
+
     let mut client_builder = Client::builder().default_allowed_mentions(AllowedMentions {
-        parse: Vec::new(),
-        replied_user: false,
-        roles: Vec::new(),
-        users: Vec::new(),
+        parse: parse_mentions,
+        ..Default::default()
     });
 
     let discord_config = if let Some(discord) = config.discord {
