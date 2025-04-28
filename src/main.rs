@@ -32,6 +32,11 @@ const fn default_bind_address() -> Cow<'static, str> {
     Cow::Borrowed("127.0.0.1:8080")
 }
 
+#[inline]
+const fn default_tellraw_prefix() -> Cow<'static, str> {
+    Cow::Borrowed("tellraw @a")
+}
+
 #[derive(Debug, Deserialize)]
 struct DiscordConfig {
     token: String,
@@ -55,6 +60,8 @@ struct Config {
     allow_role_mention: bool,
     #[serde(default)]
     embed_url: bool,
+    #[serde(default = "default_tellraw_prefix")]
+    tellraw_prefix: Cow<'static, str>,
 }
 
 #[derive(Debug, Clone)]
@@ -126,7 +133,10 @@ async fn main() -> Result<()> {
 
     let (discord_message_sender, discord_message_receiver) = unbounded_channel();
     if let Some((token, channel_id)) = discord_config {
-        tasks.spawn(launch_wrapper(discord_message_receiver));
+        tasks.spawn(launch_wrapper(
+            discord_message_receiver,
+            config.tellraw_prefix.into_owned(),
+        ));
         tasks.spawn(read_discord(
             token,
             channel_id,

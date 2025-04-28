@@ -41,3 +41,4 @@ To launch the server wrapped by vanilla-discord-bridge, invoke vanilla-discord-b
 |ALLOW_USER_MENTION|false|bool|Should Minecraft users be able to mention users?|
 |ALLOW_ROLE_MENTION|false|bool|Should Minecraft users be able to mention roles?|
 |EMBED_URL|false|bool|Should URLs sent by Minecraft users embed on Discord?|
+|TELLRAW_PREFI|tellraw @a|String|The command to prefix a space and the component with. Useful if Essentials overwrites vanilla tellraw, or if you want to customize which players can see the Discord bridge.|
