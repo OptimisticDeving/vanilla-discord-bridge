@@ -4,14 +4,17 @@ use axum::{
 };
 use tracing::warn;
 
-use crate::{State, has_header_and_matches};
+use crate::{AppState, has_header_and_matches};
 
 pub struct Authorized;
 
-impl FromRequestParts<State> for Authorized {
+impl FromRequestParts<AppState> for Authorized {
     type Rejection = StatusCode;
 
-    async fn from_request_parts(parts: &mut Parts, state: &State) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         if has_header_and_matches(parts, "User-Agent", |value| {
             !value.starts_with("Minecraft server")
         }) {
