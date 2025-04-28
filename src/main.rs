@@ -79,7 +79,6 @@ async fn chat(
     _authorized: Authorized,
     Json(chat): Json<LegacyChat>,
 ) -> Json<&'static LegacyChatResponse> {
-    let _ = _authorized;
     info!(
         "chat from {} ({}): {}",
         chat.profile.user_display_name, chat.profile.user_id, chat.text
