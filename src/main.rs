@@ -14,8 +14,18 @@ use discord::{read_discord, schedule_send_discord};
 use legacy::{JoinOrLeaveEvent, LegacyChat, LegacyChatResponse};
 use regex::Regex;
 use serde::Deserialize;
-use tokio::{main, net::TcpListener, sync::mpsc::unbounded_channel, task::JoinSet};
-use tracing::error;
+use tokio::{
+    main,
+    net::TcpListener,
+    select,
+    signal::{
+        ctrl_c,
+        unix::{SignalKind, signal},
+    },
+    sync::mpsc::unbounded_channel,
+    task::JoinSet,
+};
+use tracing::{error, info};
 use tracing_subscriber::fmt;
 use twilight_http::Client;
 use twilight_model::{
@@ -145,7 +155,19 @@ async fn main() -> Result<()> {
         ));
     }
 
-    error!("task failed {:?}", tasks.join_next().await);
+    let mut sig_int = signal(SignalKind::terminate())?;
+    select! {
+        res = tasks.join_next() => {
+            error!("task failed {:?}", res)
+        }
+        _ = ctrl_c() => {
+            info!("ctrl+c")
+        }
+        _ = sig_int.recv() => {
+            info!("sigint")
+        }
+    }
+
     tasks.abort_all();
     Ok(())
 }
