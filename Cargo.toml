@@ -7,16 +7,16 @@ edition = "2024"
 serde = { version = "1", features = ["derive"] }
 serde-env = "0.2"
 
-tokio = { version = "1.44", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.44", features = [
+    "rt-multi-thread",
+    "macros",
+    "process",
+    "sync",
+    "parking_lot",
+] }
 anyhow = "1"
 
 axum = "0.8"
-tower-http = { version = "0.6", features = [
-    "trace",
-    "auth",
-    "add-extension",
-    "sensitive-headers",
-] }
 base64 = "0.22"
 
 tracing = "0.1"
@@ -28,3 +28,4 @@ twilight-http = { version = "0.16", default-features = false, features = [
     "rustls-platform-verifier",
 ] }
 twilight-model = "0.16"
+twilight-gateway = "0.16"

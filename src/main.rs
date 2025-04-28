@@ -1,35 +1,39 @@
 mod auth;
 mod discord;
 mod legacy;
+mod wrapper;
 
-use std::{borrow::Cow, iter::once, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use anyhow::Result;
 use auth::Authorized;
-use axum::{
-    Json, Router,
-    extract::State,
-    http::{header::AUTHORIZATION, request::Parts},
-    routing::post,
-    serve,
-};
+use axum::{Json, Router, extract::State, http::request::Parts, routing::post, serve};
 use base64::{Engine, prelude::BASE64_STANDARD};
-use discord::schedule_send_discord;
+use discord::{read_discord, schedule_send_discord};
 use legacy::{JoinOrLeaveEvent, LegacyChat, LegacyChatResponse};
 use serde::Deserialize;
-use tokio::{main, net::TcpListener};
-use tower_http::{sensitive_headers::SetSensitiveHeadersLayer, trace::TraceLayer};
-use tracing::info;
+use tokio::{main, net::TcpListener, sync::mpsc::unbounded_channel, task::JoinSet};
+use tracing::{error, info};
 use tracing_subscriber::fmt;
 use twilight_http::Client;
 use twilight_model::{
     channel::message::AllowedMentions,
-    id::{Id, marker::WebhookMarker},
+    id::{
+        Id,
+        marker::{ChannelMarker, WebhookMarker},
+    },
 };
+use wrapper::launch_wrapper;
 
 #[inline]
 const fn default_bind_address() -> Cow<'static, str> {
     Cow::Borrowed("[::]:8080")
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscordConfig {
+    token: String,
+    channel_id: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,6 +43,8 @@ struct Config {
     bind_address: Cow<'static, str>,
     webhook_id: u64,
     webhook_token: String,
+    #[serde(default)]
+    discord: Option<DiscordConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,31 +60,54 @@ async fn main() -> Result<()> {
     fmt().init();
 
     let config: Config = serde_env::from_env()?;
+    let mut client_builder = Client::builder().default_allowed_mentions(AllowedMentions {
+        parse: Vec::new(),
+        replied_user: false,
+        roles: Vec::new(),
+        users: Vec::new(),
+    });
+
+    let discord_config = if let Some(discord) = config.discord {
+        client_builder = client_builder.token(discord.token.clone());
+        Some((discord.token, Id::<ChannelMarker>::new(discord.channel_id)))
+    } else {
+        None
+    };
+
+    let client = Arc::new(client_builder.build());
+    let webhook_id = Id::new(config.webhook_id);
+
     let state = AppState {
-        client: Client::builder()
-            .default_allowed_mentions(AllowedMentions {
-                parse: Vec::new(),
-                replied_user: false,
-                roles: Vec::new(),
-                users: Vec::new(),
-            })
-            .build()
-            .into(),
+        client: client.clone(),
         expected_auth_header: format!("Basic {}", BASE64_STANDARD.encode(&config.api_key)).into(),
-        webhook_id: Id::new(config.webhook_id),
+        webhook_id,
         webhook_token: config.webhook_token.into(),
     };
 
     let app = Router::new()
-        .layer(SetSensitiveHeadersLayer::new(once(AUTHORIZATION)))
-        .layer(TraceLayer::new_for_http())
         .route("/v1/chatx", post(chat))
         .route("/v1/join", post(join))
         .route("/v1/leave", post(leave))
         .with_state(state);
 
     let listener = TcpListener::bind(config.bind_address.as_ref()).await?;
-    serve(listener, app).await?;
+    let mut tasks = JoinSet::new();
+
+    tasks.spawn(async { serve(listener, app).await.map_err(anyhow::Error::from) });
+
+    let (discord_message_sender, discord_message_receiver) = unbounded_channel();
+    if let Some((token, channel_id)) = discord_config {
+        tasks.spawn(launch_wrapper(discord_message_receiver));
+        tasks.spawn(read_discord(
+            token,
+            channel_id,
+            webhook_id,
+            discord_message_sender,
+        ));
+    }
+
+    error!("task failed {:?}", tasks.join_next().await);
+    tasks.abort_all();
     Ok(())
 }
 
