@@ -15,7 +15,7 @@ use legacy::{JoinOrLeaveEvent, LegacyChat, LegacyChatResponse};
 use regex::Regex;
 use serde::Deserialize;
 use tokio::{main, net::TcpListener, sync::mpsc::unbounded_channel, task::JoinSet};
-use tracing::{error, info};
+use tracing::error;
 use tracing_subscriber::fmt;
 use twilight_http::Client;
 use twilight_model::{
@@ -53,6 +53,8 @@ struct Config {
     allow_user_mention: bool,
     #[serde(default)]
     allow_role_mention: bool,
+    #[serde(default)]
+    embed_url: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +65,7 @@ struct AppState {
     webhook_token: Arc<str>,
     discord_username_regex: Arc<Regex>,
     formatting_regex: Arc<Regex>,
+    embed_url: bool,
 }
 
 #[main]
@@ -107,6 +110,7 @@ async fn main() -> Result<()> {
         webhook_token: config.webhook_token.into(),
         discord_username_regex: Arc::new(Regex::new(r#"(?i)(d)(i)(scord)"#)?),
         formatting_regex: Arc::new(Regex::new(r#"([\\_`*>|-~\[\]()#])"#)?),
+        embed_url: config.embed_url,
     };
 
     let app = Router::new()
@@ -157,11 +161,6 @@ async fn chat(
     _authorized: Authorized,
     Json(chat): Json<LegacyChat>,
 ) -> Json<&'static LegacyChatResponse> {
-    info!(
-        "chat from {} ({}): {}",
-        chat.profile.user_display_name, chat.profile.user_id, chat.text
-    );
-
     schedule_send_discord(&state, chat.profile.user_display_name.into(), chat.text);
 
     Json(&PASS_THROUGH_RESPONSE)
@@ -173,11 +172,6 @@ async fn join(
     _authorized: Authorized,
     Json(join): Json<JoinOrLeaveEvent>,
 ) {
-    info!(
-        "join from {} ({})",
-        join.profile.user_display_name, join.profile.user_id
-    );
-
     schedule_send_discord(
         &state,
         "System".into(),
@@ -191,11 +185,6 @@ async fn leave(
     _authorized: Authorized,
     Json(leave): Json<JoinOrLeaveEvent>,
 ) {
-    info!(
-        "leave from {} ({})",
-        leave.profile.user_display_name, leave.profile.user_id
-    );
-
     schedule_send_discord(
         &state,
         "System".into(),

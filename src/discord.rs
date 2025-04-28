@@ -21,6 +21,7 @@ pub fn schedule_send_discord(state: &AppState, sender: Cow<'static, str>, conten
         state.webhook_token.clone(),
         state.discord_username_regex.clone(),
         state.formatting_regex.clone(),
+        state.embed_url.clone(),
         sender,
         content,
     ));
@@ -33,12 +34,19 @@ async fn send_discord(
     webhook_token: Arc<str>,
     discord_username_regex: Arc<Regex>,
     formatting_regex: Arc<Regex>,
+    embed_url: bool,
     sender: Cow<'static, str>,
     content: String,
 ) {
+    let mut escaped_formatting = formatting_regex.replace_all(&content, "\\$1");
+
+    if !embed_url {
+        escaped_formatting = Cow::Owned(escaped_formatting.replace(":", "\\:"))
+    }
+
     match client
         .execute_webhook(webhook_id, &webhook_token)
-        .content(formatting_regex.replace_all(&content, "\\$1").as_ref())
+        .content(&escaped_formatting)
         .username(
             discord_username_regex
                 .replace_all(sender.as_ref(), "$1¡$3")
@@ -116,5 +124,5 @@ pub async fn read_discord(
         }
     }
 
-    todo!()
+    Ok(())
 }

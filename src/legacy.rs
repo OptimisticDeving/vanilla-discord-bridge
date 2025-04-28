@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct LegacyProfile {
-    pub user_id: String,
     pub user_display_name: String,
 }
 
