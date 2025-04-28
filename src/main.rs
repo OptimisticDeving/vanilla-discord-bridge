@@ -1,4 +1,5 @@
 mod auth;
+mod content;
 mod discord;
 mod legacy;
 mod wrapper;
@@ -11,6 +12,7 @@ use axum::{Json, Router, extract::State, http::request::Parts, routing::post, se
 use base64::{Engine, prelude::BASE64_STANDARD};
 use discord::{read_discord, schedule_send_discord};
 use legacy::{JoinOrLeaveEvent, LegacyChat, LegacyChatResponse};
+use regex::Regex;
 use serde::Deserialize;
 use tokio::{main, net::TcpListener, sync::mpsc::unbounded_channel, task::JoinSet};
 use tracing::{error, info};
@@ -53,6 +55,8 @@ struct AppState {
     expected_auth_header: Arc<str>,
     webhook_id: Id<WebhookMarker>,
     webhook_token: Arc<str>,
+    discord_username_regex: Arc<Regex>,
+    formatting_regex: Arc<Regex>,
 }
 
 #[main]
@@ -82,6 +86,8 @@ async fn main() -> Result<()> {
         expected_auth_header: format!("Basic {}", BASE64_STANDARD.encode(&config.api_key)).into(),
         webhook_id,
         webhook_token: config.webhook_token.into(),
+        discord_username_regex: Arc::new(Regex::new(r#"(?i)(d)(i)(scord)"#)?),
+        formatting_regex: Arc::new(Regex::new(r#"([\\_`*>|-~\[\]()#])"#)?),
     };
 
     let app = Router::new()

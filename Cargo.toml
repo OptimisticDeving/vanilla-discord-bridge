@@ -29,3 +29,6 @@ twilight-http = { version = "0.16", default-features = false, features = [
 ] }
 twilight-model = "0.16"
 twilight-gateway = "0.16"
+
+
+regex = "1.11"

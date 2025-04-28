@@ -1,4 +1,5 @@
 use anyhow::Result;
+use regex::Regex;
 use std::{borrow::Cow, sync::Arc};
 use tokio::{spawn, sync::mpsc::UnboundedSender};
 use twilight_gateway::{Event, EventTypeFlags, Intents, Shard, ShardId, StreamExt};
@@ -10,7 +11,7 @@ use twilight_model::id::{
     marker::{ChannelMarker, WebhookMarker},
 };
 
-use crate::AppState;
+use crate::{AppState, content::escape_minecraft};
 
 #[inline]
 pub fn schedule_send_discord(state: &AppState, sender: Cow<'static, str>, content: String) {
@@ -18,6 +19,8 @@ pub fn schedule_send_discord(state: &AppState, sender: Cow<'static, str>, conten
         state.client.clone(),
         state.webhook_id.clone(),
         state.webhook_token.clone(),
+        state.discord_username_regex.clone(),
+        state.formatting_regex.clone(),
         sender,
         content,
     ));
@@ -28,13 +31,19 @@ async fn send_discord(
     client: Arc<Client>,
     webhook_id: Id<WebhookMarker>,
     webhook_token: Arc<str>,
+    discord_username_regex: Arc<Regex>,
+    formatting_regex: Arc<Regex>,
     sender: Cow<'static, str>,
     content: String,
 ) {
     match client
         .execute_webhook(webhook_id, &webhook_token)
-        .content(&content)
-        .username(sender.as_ref())
+        .content(formatting_regex.replace_all(&content, "\\$1").as_ref())
+        .username(
+            discord_username_regex
+                .replace_all(sender.as_ref(), "$1¡$3")
+                .as_ref(),
+        )
         .await
     {
         Ok(_) => {}
@@ -59,8 +68,8 @@ impl IncomingDiscordMessage {
         format!(
             r#"tellraw @a "<{}> {}"
 "#,
-            escape_for_component(&self.username),
-            escape_for_component(&self.content)
+            escape_minecraft(&escape_for_component(&self.username)),
+            escape_minecraft(&escape_for_component(&self.content))
         )
     }
 }
@@ -93,13 +102,14 @@ pub async fn read_discord(
                     continue;
                 }
 
+                let escaped_name = escape_minecraft(&event.author.name);
                 discord_message_sender.send(IncomingDiscordMessage {
                     username: if event.author.bot {
-                        format!("[BOT] {}", event.author.name)
+                        format!("[BOT] {escaped_name}")
                     } else {
-                        event.author.name.clone()
+                        escaped_name
                     },
-                    content: event.content.clone(),
+                    content: escape_minecraft(&event.content),
                 })?;
             }
             _ => continue,
