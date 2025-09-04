@@ -1,4 +1,8 @@
 use anyhow::{Result, anyhow};
+use nix::{
+    sys::signal::{Signal::SIGINT, kill},
+    unistd::Pid,
+};
 use std::{
     collections::VecDeque,
     convert::Infallible,
@@ -12,7 +16,10 @@ use tokio::{
     io::AsyncWriteExt,
     process::{ChildStdin, Command},
     select,
-    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+    sync::{
+        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+        oneshot::Receiver,
+    },
 };
 
 use crate::discord::IncomingDiscordMessage;
@@ -80,6 +87,7 @@ async fn pipe_stdin(
 pub async fn launch_wrapper(
     discord_message_receiver: UnboundedReceiver<IncomingDiscordMessage>,
     tellraw_prefix: String,
+    death_receiver: Receiver<()>,
 ) -> Result<()> {
     let mut args: VecDeque<String> = args().into_iter().skip(1).collect();
     let mut command = Command::new(
@@ -90,10 +98,7 @@ pub async fn launch_wrapper(
     let (stdin_sender, stdin_receiver) = unbounded_channel();
     std::thread::spawn(|| read_stdin(stdin_sender));
 
-    command
-        .args(args.into_iter())
-        .kill_on_drop(true) // TODO: Shutdown gracefully
-        .stdin(Stdio::piped());
+    command.args(args.into_iter()).stdin(Stdio::piped());
 
     info!("starting server");
 
@@ -107,7 +112,18 @@ pub async fn launch_wrapper(
             discord_message_receiver,
             tellraw_prefix
         ) => {}
+        _ = death_receiver => {}
     };
+
+    let Some(pid) = child.id() else {
+        return Ok(());
+    };
+
+    let pid = Pid::from_raw(pid.cast_signed());
+
+    info!("gracefully shutting down server");
+    kill(pid, SIGINT)?;
+    info!("server gracefully shutdown");
 
     Ok(())
 }

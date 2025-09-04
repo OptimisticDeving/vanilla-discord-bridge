@@ -22,7 +22,8 @@ use tokio::{
         ctrl_c,
         unix::{SignalKind, signal},
     },
-    sync::mpsc::unbounded_channel,
+    spawn,
+    sync::{mpsc::unbounded_channel, oneshot},
     task::JoinSet,
 };
 use tracing::{error, info};
@@ -142,11 +143,14 @@ async fn main() -> Result<()> {
     tasks.spawn(async { serve(listener, app).await.map_err(anyhow::Error::from) });
 
     let (discord_message_sender, discord_message_receiver) = unbounded_channel();
+    let (death_sender, death_receiver) = oneshot::channel();
+    let mut server_launcher = spawn(launch_wrapper(
+        discord_message_receiver,
+        config.tellraw_prefix.into_owned(),
+        death_receiver,
+    ));
+
     if let Some((token, channel_id)) = discord_config {
-        tasks.spawn(launch_wrapper(
-            discord_message_receiver,
-            config.tellraw_prefix.into_owned(),
-        ));
         tasks.spawn(read_discord(
             token,
             channel_id,
@@ -155,7 +159,7 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let mut sig_int = signal(SignalKind::terminate())?;
+    let mut sig_term = signal(SignalKind::terminate())?;
     select! {
         res = tasks.join_next() => {
             error!("task failed {:?}", res)
@@ -163,12 +167,18 @@ async fn main() -> Result<()> {
         _ = ctrl_c() => {
             info!("ctrl+c")
         }
-        _ = sig_int.recv() => {
+        _ = sig_term.recv() => {
             info!("sigint")
+        }
+        _ = &mut server_launcher => {
+            info!("server died");
         }
     }
 
+    let _ = death_sender.send(());
+    server_launcher.await??;
     tasks.abort_all();
+
     Ok(())
 }
 
