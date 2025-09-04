@@ -3,6 +3,7 @@ use regex::Regex;
 use std::{borrow::Cow, sync::Arc};
 use tokio::{spawn, sync::mpsc::UnboundedSender};
 use twilight_gateway::{Event, EventTypeFlags, Intents, Shard, ShardId, StreamExt};
+use uuid::{Uuid, fmt::Simple};
 
 use tracing::warn;
 use twilight_http::Client;
@@ -14,7 +15,12 @@ use twilight_model::id::{
 use crate::{AppState, content::escape_minecraft};
 
 #[inline]
-pub fn schedule_send_discord(state: &AppState, sender: Cow<'static, str>, content: String) {
+pub fn schedule_send_discord(
+    state: &AppState,
+    sender: Cow<'static, str>,
+    sender_id: Option<Uuid>,
+    content: String,
+) {
     spawn(send_discord(
         state.client.clone(),
         state.webhook_id.clone(),
@@ -23,6 +29,7 @@ pub fn schedule_send_discord(state: &AppState, sender: Cow<'static, str>, conten
         state.formatting_regex.clone(),
         state.embed_url.clone(),
         sender,
+        sender_id,
         content,
     ));
 }
@@ -35,7 +42,8 @@ async fn send_discord(
     discord_username_regex: Arc<Regex>,
     formatting_regex: Arc<Regex>,
     embed_url: bool,
-    sender: Cow<'static, str>,
+    sender_name: Cow<'static, str>,
+    sender_id: Option<Uuid>,
     content: String,
 ) {
     let mut escaped_formatting = formatting_regex.replace_all(&content, "\\$1");
@@ -44,16 +52,25 @@ async fn send_discord(
         escaped_formatting = Cow::Owned(escaped_formatting.replace(":", "\\:"))
     }
 
-    match client
+    let username = discord_username_regex.replace_all(sender_name.as_ref(), "$1¡$3");
+
+    let mut message_builder = client
         .execute_webhook(webhook_id, &webhook_token)
         .content(&escaped_formatting)
-        .username(
-            discord_username_regex
-                .replace_all(sender.as_ref(), "$1¡$3")
-                .as_ref(),
+        .username(&username);
+
+    let avatar_url = sender_id.map(|id| {
+        format!(
+            "https://minotar.net/helm/{}",
+            Simple::from_uuid(id).to_string()
         )
-        .await
-    {
+    });
+
+    if let Some(avatar_url) = avatar_url.as_ref() {
+        message_builder = message_builder.avatar_url(avatar_url);
+    }
+
+    match message_builder.await {
         Ok(_) => {}
         Err(e) => warn!(?e, "failure sending message to webhook"),
     }

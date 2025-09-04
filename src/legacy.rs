@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 pub struct LegacyProfile {
     pub user_display_name: String,
+    pub user_id: Uuid,
 }
 
 #[derive(Debug, Deserialize)]

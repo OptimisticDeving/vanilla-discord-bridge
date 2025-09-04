@@ -203,7 +203,12 @@ async fn chat(
     _authorized: Authorized,
     Json(chat): Json<LegacyChat>,
 ) -> Json<&'static LegacyChatResponse> {
-    schedule_send_discord(&state, chat.profile.user_display_name.into(), chat.text);
+    schedule_send_discord(
+        &state,
+        chat.profile.user_display_name.into(),
+        Some(chat.profile.user_id),
+        chat.text,
+    );
 
     Json(&PASS_THROUGH_RESPONSE)
 }
@@ -217,6 +222,7 @@ async fn join(
     schedule_send_discord(
         &state,
         "System".into(),
+        None,
         format!("{} joined the game", join.profile.user_display_name),
     );
 }
@@ -230,6 +236,7 @@ async fn leave(
     schedule_send_discord(
         &state,
         "System".into(),
+        None,
         format!("{} left the game", leave.profile.user_display_name),
     );
 }
