@@ -1,3 +1,9 @@
+[Nebula]: https://github.com/slackhq/nebula
+[Wireguard]: https://github.com/WireGuard
+[OpenVPN]: https://openvpn.net/
+[ZeroTier]: https://www.zerotier.com/
+[Tailscale]: https://www.tailscale.com/
+
 # vanilla-discord-bridge
 
 > [!CAUTION]
@@ -18,13 +24,24 @@ text-filtering-version=0
 text-filtering-config={"apiServer":"http://127.0.0.1:8080/","apiKey":"API_KEY","endpoints":{"chat":"v1/chatx"}}
 ```
 
+### Discord Bot
+You must create a Discord bot if you wish for your Discord users to be able to communicate to your Minecraft players. Make sure that it has the `MESSAGE_CONTENT` intent. Additionally, you must choose either `Wrapper Mode` or `RCon mode`.
+
 ### Wrapper Mode
 
-In order to allow Discord users to communicate with Minecraft servers via Minecraft chat, vanilla-discord-bridge must launch your server and inject tellraw into the process input. You will still be able to input commands via process input, but you will not be able to tab complete them on server implementations that support console tab completions.
-
-You must additionally create a Discord bot and make sure it has the `Message Content` gateway intent enabled.
+In order to allow Discord users to communicate with Minecraft servers via Minecraft chat, vanilla-discord-bridge can launch your server and inject tellraw into the process input. You will still be able to input commands via process input, but you will not be able to tab complete them on server implementations that support console tab completions.
 
 To launch the server wrapped by vanilla-discord-bridge, invoke vanilla-discord-bridge with the full command line you use to launch your server without the wrapper (i.e. `PERHAPS_SOME_ENV_HERE=1 java -jar server.jar --nogui` would become `PERHAPS_SOME_ENV_HERE=1 API_KEY=SECURE_API_KEY WEBHOOK_ID=00000000000 WEBHOOK_TOKEN=WEBHOOK_TOKEN_HERE DISCORD_TOKEN=DISCORD_TOKEN_HERE DISCORD_CHANNEL_ID=00000000000 vanilla-discord-bridge java -jar server.jar --nogui`). Specifying DISCORD_TOKEN requires that you specify DISCORD_CHANNEL_ID, and vice-versa.
+
+### RCon Mode
+
+> [!CAUTION]
+> Make sure that the wider Internet is unable to access your RCon port, as this will leave your server susceptible to bruteforce attacks, even if you choose a secure password.
+
+> [!CAUTION]
+> If you are going to connect to the RCon port over an untrusted network (i.e. the Internet), you should consider using software like [Nebula], [Wireguard], [OpenVPN], [Tailscale] or [ZeroTier] which provide a much-needed layer of encryption (as RCon is entirely unencrypted and thus incredibly susceptible to surveillance and incredibly easy MITM) and authentication.
+
+Supply an address in the `RCON_HOST` environment variable, and supply the password in the `RCON_PASS` environment variable. That's it, just make sure you read the warnings above!
 
 
 ## Environment variables
@@ -41,4 +58,6 @@ To launch the server wrapped by vanilla-discord-bridge, invoke vanilla-discord-b
 |ALLOW_USER_MENTION|false|bool|Should Minecraft users be able to mention users?|
 |ALLOW_ROLE_MENTION|false|bool|Should Minecraft users be able to mention roles?|
 |EMBED_URL|false|bool|Should URLs sent by Minecraft users embed on Discord?|
-|TELLRAW_PREFI|tellraw @a|String|The command to prefix a space and the component with. Useful if Essentials overwrites vanilla tellraw, or if you want to customize which players can see the Discord bridge.|
+|TELLRAW_PREFIX|tellraw @a|String|The command to prefix a space and the component with. Useful if Essentials overwrites vanilla tellraw, or if you want to customize which players can see the Discord bridge.|
+|RCON_HOST|-|Socket Address|RCON address to connect to instead of wrapping server launch|
+|RCON_PASS|-|String|RCON password|

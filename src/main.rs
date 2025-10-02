@@ -2,9 +2,10 @@ mod auth;
 mod content;
 mod discord;
 mod legacy;
+mod rcon;
 mod wrapper;
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, pin::Pin, sync::Arc, task::Poll};
 
 use anyhow::Result;
 use auth::Authorized;
@@ -38,6 +39,8 @@ use twilight_model::{
 };
 use wrapper::launch_wrapper;
 
+use crate::rcon::RconClient;
+
 #[inline]
 const fn default_bind_address() -> Cow<'static, str> {
     Cow::Borrowed("127.0.0.1:8080")
@@ -52,6 +55,12 @@ const fn default_tellraw_prefix() -> Cow<'static, str> {
 struct DiscordConfig {
     token: String,
     channel_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RconConfig {
+    host: String,
+    pass: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,6 +82,8 @@ struct Config {
     embed_url: bool,
     #[serde(default = "default_tellraw_prefix")]
     tellraw_prefix: Cow<'static, str>,
+    #[serde(default)]
+    rcon: Option<RconConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +95,35 @@ struct AppState {
     discord_username_regex: Arc<Regex>,
     formatting_regex: Arc<Regex>,
     embed_url: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum OptionalFuture<T, F: Future<Output = T> + Unpin> {
+    Present(F),
+    Vacant,
+}
+
+impl<T, F: Future<Output = T> + Unpin> OptionalFuture<T, F> {
+    const fn is_some(&self) -> bool {
+        match self {
+            OptionalFuture::Present(_) => true,
+            _ => false,
+        }
+    }
+}
+
+impl<T, F: Future<Output = T> + Unpin> Future for OptionalFuture<T, F> {
+    type Output = T;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        match *self.as_mut() {
+            Self::Present(ref mut present) => Pin::new(present).poll(cx),
+            Self::Vacant => Poll::Pending,
+        }
+    }
 }
 
 #[main]
@@ -143,12 +183,23 @@ async fn main() -> Result<()> {
     tasks.spawn(async { serve(listener, app).await.map_err(anyhow::Error::from) });
 
     let (discord_message_sender, discord_message_receiver) = unbounded_channel();
+    let mut discord_message_receiver = Some(discord_message_receiver);
+    let rcon_client = if let Some(rcon) = config.rcon {
+        Some(RconClient::new(&rcon.host, &rcon.pass).await?)
+    } else {
+        None
+    };
+
     let (death_sender, death_receiver) = oneshot::channel();
-    let mut server_launcher = spawn(launch_wrapper(
-        discord_message_receiver,
-        config.tellraw_prefix.into_owned(),
-        death_receiver,
-    ));
+    let mut server_launcher = if rcon_client.is_none() {
+        OptionalFuture::Present(spawn(launch_wrapper(
+            discord_message_receiver.take().unwrap(),
+            config.tellraw_prefix.to_string(),
+            death_receiver,
+        )))
+    } else {
+        OptionalFuture::Vacant
+    };
 
     if let Some((token, channel_id)) = discord_config {
         tasks.spawn(read_discord(
@@ -156,6 +207,13 @@ async fn main() -> Result<()> {
             channel_id,
             webhook_id,
             discord_message_sender,
+        ));
+    }
+
+    if let Some(rcon_client) = rcon_client {
+        tasks.spawn(rcon_client.handle(
+            discord_message_receiver.take().unwrap(),
+            config.tellraw_prefix.to_string(),
         ));
     }
 
@@ -176,7 +234,9 @@ async fn main() -> Result<()> {
     }
 
     let _ = death_sender.send(());
-    server_launcher.await??;
+    if server_launcher.is_some() {
+        server_launcher.await??;
+    }
     tasks.abort_all();
 
     Ok(())

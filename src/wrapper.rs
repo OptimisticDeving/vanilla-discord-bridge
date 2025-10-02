@@ -57,6 +57,7 @@ impl StdinMessage {
         let as_string = self.as_string(tellraw_prefix);
 
         to.write_all(as_string.as_bytes()).await?;
+        to.write_u8(b'\n').await?;
         to.flush().await?;
         Ok(())
     }

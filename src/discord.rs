@@ -91,8 +91,7 @@ impl IncomingDiscordMessage {
     #[inline]
     pub fn create_command(self, tellraw_prefix: &str) -> String {
         format!(
-            r#"{tellraw_prefix} "<{}> {}"
-"#,
+            r#"{tellraw_prefix} "<{}> {}""#,
             escape_minecraft(&escape_for_component(&self.username)),
             escape_minecraft(&escape_for_component(&self.content))
         )
